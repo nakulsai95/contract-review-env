@@ -150,9 +150,10 @@ openenv validate
 
 | Task | Difficulty | Model | Score |
 |------|-----------|-------|-------|
-| Clause Classification | Easy | Qwen2.5-72B-Instruct | ~0.85 |
-| Risk Assessment | Medium | Qwen2.5-72B-Instruct | ~0.55 |
-| Full Review | Hard | Qwen2.5-72B-Instruct | ~0.40 |
+| Clause Classification | Easy | Qwen2.5-72B-Instruct | 0.600 |
+| Risk Assessment | Medium | Qwen2.5-72B-Instruct | 0.834 |
+| Full Review | Hard | Qwen2.5-72B-Instruct | 0.620 |
+| **Average** | | | **0.685** |
 
 ## Scenario Sources
 
