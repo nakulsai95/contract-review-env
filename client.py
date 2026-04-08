@@ -7,7 +7,10 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import ContractReviewAction, ContractReviewObservation
+try:
+    from .models import ContractReviewAction, ContractReviewObservation
+except ImportError:
+    from models import ContractReviewAction, ContractReviewObservation
 
 
 class ContractReviewEnv(
@@ -40,6 +43,7 @@ class ContractReviewEnv(
 
     def _step_payload(self, action: ContractReviewAction) -> Dict:
         return {
+            "action_type": action.action_type,
             "clause_type": action.clause_type,
             "risk_level": action.risk_level,
             "issues": action.issues,
@@ -56,6 +60,7 @@ class ContractReviewEnv(
             difficulty=obs_data.get("difficulty", "easy"),
             feedback=obs_data.get("feedback", ""),
             clauses_remaining=obs_data.get("clauses_remaining", 0),
+            context_info=obs_data.get("context_info", ""),
             done=payload.get("done", False),
             reward=payload.get("reward"),
             metadata=obs_data.get("metadata", {}),
