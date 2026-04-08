@@ -170,9 +170,15 @@ class ContractReviewEnvironment(Environment):
         else:
             return grade_task_hard(action_dict, clause)
 
+    @staticmethod
+    def _clamp_score(score: float) -> float:
+        """Clamp score to strictly (0, 1) — never exactly 0.0 or 1.0."""
+        return max(0.01, min(0.99, score))
+
     def _make_episode_complete_obs(self, feedback: str, result: dict) -> ContractReviewObservation:
         """Build the final observation when the episode is done."""
-        avg_reward = sum(self._rewards) / len(self._rewards) if self._rewards else 0.0
+        avg_reward = sum(self._rewards) / len(self._rewards) if self._rewards else 0.01
+        avg_reward = self._clamp_score(avg_reward)
         return ContractReviewObservation(
             clause_text="",
             clause_id="",
@@ -249,7 +255,7 @@ class ContractReviewEnvironment(Environment):
 
         # --- Submit review (default) ---
         result = self._auto_submit_clause(action)
-        step_reward = result["score"]
+        step_reward = self._clamp_score(result["score"])
         self._rewards.append(step_reward)
 
         # Build feedback string
