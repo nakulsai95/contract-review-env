@@ -269,6 +269,8 @@ async def run_task(difficulty: str) -> float:
             extra_context = ""
             if obs.context_info:
                 extra_context = f"\n\nContract context:\n{obs.context_info}"
+            if hasattr(obs, "related_clauses_summary") and obs.related_clauses_summary:
+                extra_context += f"\n\nRelated clauses in this contract:\n{obs.related_clauses_summary}"
 
             # Get LLM's analysis
             parsed = get_model_response(

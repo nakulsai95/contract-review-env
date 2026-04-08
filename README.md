@@ -24,30 +24,58 @@ Contract review is a $30B+ industry. Junior lawyers spend thousands of hours rev
 - **Objective**: Classify the type of a contract clause
 - **Clauses per episode**: 5 (up to 10 steps with info-gathering)
 - **Grading**: Exact match = 1.0, related category = 0.3, wrong = 0.0
-- **Expected baseline**: ~0.85+ (most clauses have clear signals)
+- **Expected baseline**: ~0.60
 
 ### Task 2: Risk Assessment (Medium)
 - **Objective**: Classify type + assess risk level + identify issues + explain
 - **Clauses per episode**: 3 (up to 9 steps with info-gathering)
-- **Grading**: Weighted — classification (25%), risk level (30%), issues found (25%), explanation quality (20%)
-- **Expected baseline**: ~0.50-0.65
+- **Grading**: Weighted — classification (25%), risk level (30%), issues found (25%), explanation quality (20%) + jurisdiction bonus
+- **Expected baseline**: ~0.83
 
 ### Task 3: Full Review with Edits (Hard)
 - **Objective**: Complete review including suggested clause revisions
 - **Clauses per episode**: 2 (up to 8 steps with info-gathering)
-- **Grading**: Weighted — classification (15%), risk (20%), issues (20%), explanation (15%), suggested edit quality (30%)
+- **Grading**: Weighted — classification (15%), risk (20%), issues (20%), explanation (15%), suggested edit quality (30%) + jurisdiction bonus + dependency bonus
 - **Reasoning gate**: Edit score is capped if explanation is weak (can't fix what you don't understand)
-- **Expected baseline**: ~0.35-0.50
+- **Expected baseline**: ~0.62
 
 ## Dataset
 
-55 curated contract clause scenarios across 17 clause types:
+55 curated contract clause scenarios across 17 clause types, organized into 4 contract groups:
 
 - **18 Easy**: Standard/safe clauses (indemnification, termination, confidentiality, etc.)
 - **18 Medium**: Clauses with clear red flags (unilateral terms, excessive penalties, overbroad scope)
 - **19 Hard**: Subtle/adversarial clauses (poison pills, circular cross-references, nested exceptions that nullify protections, contradictory carveouts)
 
 **17 clause types**: `indemnification`, `limitation_of_liability`, `termination`, `confidentiality`, `ip_assignment`, `non_compete`, `payment_terms`, `governing_law`, `force_majeure`, `warranty`, `data_protection`, `dispute_resolution`, `assignment_and_change_of_control`, `representations_and_warranties`, `audit_rights`, `insurance_requirements`, `most_favored_nation`
+
+### Contract Groups (Multi-Clause Dependencies)
+
+Clauses are grouped into realistic contracts where they interact:
+
+| Contract | Clauses | Dependency Type |
+|----------|---------|----------------|
+| TechCorp MSA | Indemnification + LoL + Termination | Contradiction: unlimited indemnification vs $100 liability cap |
+| CloudSoft SaaS | Confidentiality + Data Protection + IP | Overlap: perpetual confidentiality conflicts with data breach disclaimer |
+| Enterprise License | LoL + Termination + Indemnification | Interaction: carveouts swallow cap; termination penalty exceeds cap |
+| Consulting Agreement | Non-compete + IP Assignment + Warranty | Compounding: worldwide non-compete + all-IP capture prevents contractor from working |
+
+Agents that identify cross-clause contradictions receive a **dependency bonus** (+0.15).
+
+### Jurisdiction-Specific Scoring
+
+The same clause may be scored differently depending on jurisdiction:
+
+| Jurisdiction | Clause Type | What Earns Bonus |
+|---|---|---|
+| California | Non-compete | Mentioning CA ban, Business and Professions Code |
+| EU/Germany | Data Protection | Referencing GDPR, Article 28, DPA |
+| Texas | Indemnification | Express negligence doctrine |
+| UK | Data Protection | UK GDPR, ICO, Data Protection Act |
+| New York | Non-compete | Reasonable geographic/temporal scope |
+| France | Termination | Notice period requirements, Code du travail |
+
+Agents that demonstrate jurisdiction awareness receive a **jurisdiction bonus** (+0.15).
 
 ## Action Space
 
@@ -68,7 +96,7 @@ Before submitting a review, the agent can gather information:
 | Action | What it returns | Cost |
 |--------|----------------|------|
 | `ask_context` | Contract type, parties, contract value | 1 step, 0 reward |
-| `view_full_contract` | Summary of other clauses in the contract | 1 step, 0 reward |
+| `view_full_contract` | Summary of other clauses + cross-clause dependencies | 1 step, 0 reward |
 | `check_jurisdiction` | Applicable jurisdiction and enforceability notes | 1 step, 0 reward |
 | `submit_review` | Graded analysis with reward | 1 step, scored |
 
@@ -78,13 +106,14 @@ This models real-world contract review where lawyers check context before analyz
 
 ```python
 class ContractReviewObservation(Observation):
-    clause_text: str        # The contract clause to review
-    clause_id: str          # Unique clause identifier
-    task_description: str   # Instructions for the current task
-    difficulty: str         # "easy", "medium", or "hard"
-    feedback: str           # Grader feedback from previous step
-    clauses_remaining: int  # Clauses left in this episode
-    context_info: str       # Context from info-gathering actions
+    clause_text: str              # The contract clause to review
+    clause_id: str                # Unique clause identifier
+    task_description: str         # Instructions for the current task
+    difficulty: str               # "easy", "medium", or "hard"
+    feedback: str                 # Grader feedback from previous step
+    clauses_remaining: int        # Clauses left in this episode
+    context_info: str             # Context from info-gathering actions
+    related_clauses_summary: str  # Cross-clause dependency hints
 ```
 
 ## Reward Design
@@ -97,8 +126,10 @@ Rewards are computed per-clause and averaged across the episode:
 - **Explanation**: TF-IDF semantic similarity to ground truth + coverage of key issues + substantiveness
 - **Suggested edit**: TF-IDF similarity to reference edit + issue coverage + structural quality
 - **Reasoning gate**: Edit score capped at 0.5 if explanation score < 0.2
+- **Jurisdiction bonus**: +0.15 for mentioning jurisdiction-specific legal rules
+- **Dependency bonus**: +0.15 for identifying cross-clause contradictions/interactions
 
-All rewards are in [0.0, 1.0]. Partial progress is always rewarded — no sparse binary signals.
+All rewards are clamped to (0.01, 0.99). Partial progress is always rewarded — no sparse binary signals.
 
 ## Setup & Usage
 

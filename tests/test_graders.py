@@ -14,8 +14,10 @@ from graders import (
     grade_task_easy,
     grade_task_medium,
     grade_task_hard,
+    grade_jurisdiction_awareness,
+    grade_dependency_awareness,
 )
-from scenarios import SCENARIOS
+from scenarios import SCENARIOS, CONTRACT_GROUPS, get_contract_group_for_clause
 
 
 class TestClassification:
@@ -113,3 +115,125 @@ class TestEndToEnd:
             else:
                 r = grade_task_hard(perfect, s)
             assert r["score"] > 0, f"{s['id']} should score > 0 with perfect answers"
+
+
+class TestJurisdictionAwareness:
+    def test_california_noncompete_bonus(self):
+        score = grade_jurisdiction_awareness(
+            "This non-compete is unenforceable in California where such clauses are banned.",
+            None,
+            "California, USA",
+            "non_compete",
+        )
+        assert score > 0.0
+
+    def test_no_jurisdiction_awareness(self):
+        score = grade_jurisdiction_awareness(
+            "This clause has issues.",
+            None,
+            "California, USA",
+            "non_compete",
+        )
+        assert score == 0.0
+
+    def test_gdpr_awareness(self):
+        score = grade_jurisdiction_awareness(
+            "Under GDPR Article 28, the data protection regulation requires controller authorization.",
+            None,
+            "Germany, EU",
+            "data_protection",
+        )
+        assert score > 0.0
+
+    def test_no_matching_jurisdiction(self):
+        score = grade_jurisdiction_awareness(
+            "GDPR applies here.",
+            None,
+            "Tokyo, Japan",
+            "data_protection",
+        )
+        assert score == 0.0
+
+    def test_jurisdiction_bonus_in_medium_task(self):
+        s = SCENARIOS[10]  # medium scenario
+        result_without = grade_task_medium(
+            {"clause_type": s["clause_type"], "risk_level": s["risk_level"],
+             "issues": s["issues"], "explanation": "Generic explanation.",
+             "suggested_edit": None},
+            s,
+        )
+        result_with = grade_task_medium(
+            {"clause_type": s["clause_type"], "risk_level": s["risk_level"],
+             "issues": s["issues"],
+             "explanation": "This indemnification under Texas law requires express negligence doctrine compliance.",
+             "suggested_edit": None},
+            s,
+            jurisdiction="Texas, USA",
+        )
+        # With jurisdiction awareness should score at least as high
+        assert result_with["score"] >= result_without["score"]
+
+    def test_max_bonus_capped(self):
+        score = grade_jurisdiction_awareness(
+            "banned unenforceable void Business and Professions Code",
+            "banned unenforceable void",
+            "California, USA",
+            "non_compete",
+        )
+        assert score <= 0.15
+
+
+class TestDependencyAwareness:
+    def test_dependency_bonus_with_keywords(self):
+        deps = CONTRACT_GROUPS["contract_A"]["dependencies"]
+        score = grade_dependency_awareness(
+            "The indemnification clause contradicts the liability cap. These are inconsistent.",
+            None,
+            deps,
+        )
+        assert score > 0.0
+
+    def test_no_dependency_awareness(self):
+        deps = CONTRACT_GROUPS["contract_A"]["dependencies"]
+        score = grade_dependency_awareness(
+            "This clause looks fine.",
+            None,
+            deps,
+        )
+        assert score == 0.0
+
+    def test_no_dependencies(self):
+        score = grade_dependency_awareness(
+            "Great explanation.",
+            None,
+            [],
+        )
+        assert score == 0.0
+
+    def test_dependency_none(self):
+        score = grade_dependency_awareness(
+            "Great explanation.",
+            None,
+            None,
+        )
+        assert score == 0.0
+
+    def test_contract_group_lookup(self):
+        group = get_contract_group_for_clause("clause_011")
+        assert group is not None
+        assert "clause_011" in group["clauses"]
+
+    def test_no_contract_group(self):
+        group = get_contract_group_for_clause("clause_001")
+        assert group is None
+
+    def test_max_bonus_capped(self):
+        deps = CONTRACT_GROUPS["contract_C"]["dependencies"]
+        score = grade_dependency_awareness(
+            "The carveout override makes the indemnification cap meaningless. "
+            "The termination penalty exceeds the liability cap. "
+            "These clauses swallow each other.",
+            "Align all caps and remove contradictory carveouts.",
+            deps,
+        )
+        assert score <= 0.15
