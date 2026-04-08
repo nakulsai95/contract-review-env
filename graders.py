@@ -230,6 +230,97 @@ def grade_suggested_edit(
     return min(1.0, score)
 
 
+JURISDICTION_RULES = {
+    ("non_compete", "california"): ["unenforceable", "banned", "void", "business and professions code"],
+    ("non_compete", "new york"): ["reasonable", "geographic", "temporal"],
+    ("data_protection", "eu"): ["gdpr", "data protection regulation", "article 28"],
+    ("data_protection", "uk"): ["uk gdpr", "ico", "data protection act"],
+    ("limitation_of_liability", "eu"): ["consumer", "personal injury", "cannot exclude"],
+    ("indemnification", "texas"): ["express negligence", "conspicuous"],
+    ("confidentiality", "california"): ["trade secret", "utsa", "defend trade secrets act"],
+    ("termination", "france"): ["notice period", "indemnité", "code du travail"],
+}
+
+
+def grade_jurisdiction_awareness(
+    action_explanation: str,
+    action_edit: str | None,
+    jurisdiction: str,
+    clause_type: str,
+) -> float:
+    """Grade jurisdiction-specific awareness (bonus 0.0 - 0.15).
+
+    Checks if the agent's explanation or edit references jurisdiction-specific
+    considerations relevant to the clause type.
+    """
+    if not jurisdiction or not clause_type:
+        return 0.0
+
+    combined_text = _normalize(action_explanation or "")
+    if action_edit:
+        combined_text += " " + _normalize(action_edit)
+
+    if not combined_text.strip():
+        return 0.0
+
+    norm_clause = _normalize(clause_type)
+    norm_jurisdiction = jurisdiction.lower()
+
+    total_bonus = 0.0
+    matched_any_rule = False
+
+    for (rule_clause, rule_jurisdiction), keywords in JURISDICTION_RULES.items():
+        if norm_clause != _normalize(rule_clause):
+            continue
+        if rule_jurisdiction not in norm_jurisdiction:
+            continue
+        matched_any_rule = True
+        matched_keywords = sum(1 for kw in keywords if kw in combined_text)
+        if matched_keywords > 0:
+            total_bonus = (matched_keywords / len(keywords)) * 0.15
+
+    if not matched_any_rule:
+        return 0.0
+
+    return min(0.15, total_bonus)
+
+
+def grade_dependency_awareness(
+    action_explanation: str,
+    action_edit: str | None,
+    dependencies: list,
+) -> float:
+    """Grade cross-clause dependency awareness (bonus 0.0 - 0.15).
+
+    Checks if the agent's explanation or suggested edit mentions keywords
+    related to the cross-clause dependencies defined in CONTRACT_GROUPS.
+    Each dependency contributes equally to the bonus.
+    """
+    if not dependencies:
+        return 0.0
+
+    combined_text = _normalize(action_explanation or "")
+    if action_edit:
+        combined_text += " " + _normalize(action_edit)
+
+    if not combined_text.strip():
+        return 0.0
+
+    per_dep_weight = 0.15 / len(dependencies)
+    total_bonus = 0.0
+
+    for dep in dependencies:
+        keywords = dep.get("keywords", [])
+        if not keywords:
+            continue
+        matched = sum(1 for kw in keywords if kw.lower() in combined_text)
+        if matched > 0:
+            ratio = min(1.0, matched / len(keywords))
+            total_bonus += ratio * per_dep_weight
+
+    return min(0.15, total_bonus)
+
+
 def grade_task_easy(
     action: Dict[str, Any],
     ground_truth: Dict[str, Any],
@@ -251,10 +342,12 @@ def grade_task_easy(
 def grade_task_medium(
     action: Dict[str, Any],
     ground_truth: Dict[str, Any],
+    jurisdiction: str | None = None,
 ) -> Dict[str, float]:
     """Grade medium task: classification + risk + issues.
 
     Weights: classification=0.25, risk=0.30, issues=0.25, explanation=0.20
+    Plus optional jurisdiction awareness bonus (0.0 - 0.15).
     """
     classification_score = grade_classification(
         action.get("clause_type", ""),
@@ -281,11 +374,22 @@ def grade_task_medium(
         + explanation_score * 0.20
     )
 
+    jurisdiction_bonus = 0.0
+    if jurisdiction:
+        jurisdiction_bonus = grade_jurisdiction_awareness(
+            action.get("explanation", ""),
+            action.get("suggested_edit"),
+            jurisdiction,
+            ground_truth["clause_type"],
+        )
+        final = min(0.99, final + jurisdiction_bonus)
+
     return {
         "classification": classification_score,
         "risk": risk_score,
         "issues": issues_score,
         "explanation": explanation_score,
+        "jurisdiction_bonus": jurisdiction_bonus,
         "score": final,
     }
 
@@ -293,11 +397,15 @@ def grade_task_medium(
 def grade_task_hard(
     action: Dict[str, Any],
     ground_truth: Dict[str, Any],
+    jurisdiction: str | None = None,
+    dependencies: list | None = None,
 ) -> Dict[str, float]:
     """Grade hard task: full review with suggested edit.
 
     Weights: classification=0.15, risk=0.20, issues=0.20,
              explanation=0.15, suggested_edit=0.30
+    Plus optional jurisdiction awareness bonus (0.0 - 0.15).
+    Plus optional dependency awareness bonus (0.0 - 0.15).
     """
     classification_score = grade_classification(
         action.get("clause_type", ""),
@@ -335,11 +443,32 @@ def grade_task_hard(
         + edit_score * 0.30
     )
 
+    jurisdiction_bonus = 0.0
+    if jurisdiction:
+        jurisdiction_bonus = grade_jurisdiction_awareness(
+            action.get("explanation", ""),
+            action.get("suggested_edit"),
+            jurisdiction,
+            ground_truth["clause_type"],
+        )
+        final = min(0.99, final + jurisdiction_bonus)
+
+    dependency_bonus = 0.0
+    if dependencies:
+        dependency_bonus = grade_dependency_awareness(
+            action.get("explanation", ""),
+            action.get("suggested_edit"),
+            dependencies,
+        )
+        final = min(0.99, final + dependency_bonus)
+
     return {
         "classification": classification_score,
         "risk": risk_score,
         "issues": issues_score,
         "explanation": explanation_score,
         "suggested_edit": edit_score,
+        "jurisdiction_bonus": jurisdiction_bonus,
+        "dependency_bonus": dependency_bonus,
         "score": final,
     }

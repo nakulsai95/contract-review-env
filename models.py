@@ -76,3 +76,10 @@ class ContractReviewObservation(Observation):
             "ask_context/view_full_contract/check_jurisdiction actions)"
         ),
     )
+    related_clauses_summary: str = Field(
+        default="",
+        description=(
+            "Summary of other clauses in the same contract that may "
+            "interact with this one"
+        ),
+    )

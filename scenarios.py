@@ -2153,6 +2153,96 @@ CONTEXT_DATA: Dict[str, Dict[str, str]] = {
 }
 
 
+CONTRACT_GROUPS: Dict[str, Dict[str, Any]] = {
+    "contract_A": {
+        "name": "TechCorp Master Services Agreement",
+        "clauses": ["clause_011", "clause_012", "clause_013"],
+        "dependencies": [
+            {
+                "clause_pair": ("clause_011", "clause_012"),
+                "type": "contradiction",
+                "description": (
+                    "Indemnification is unlimited but liability cap is $100. "
+                    "These contradict."
+                ),
+                "keywords": [
+                    "contradict", "conflict", "inconsistent",
+                    "indemnification exceeds", "cap",
+                ],
+            },
+        ],
+    },
+    "contract_B": {
+        "name": "CloudSoft SaaS Agreement",
+        "clauses": ["clause_014", "clause_019", "clause_015"],
+        "dependencies": [
+            {
+                "clause_pair": ("clause_014", "clause_019"),
+                "type": "overlap",
+                "description": (
+                    "Perpetual confidentiality conflicts with data protection "
+                    "clause that disclaims liability for breaches."
+                ),
+                "keywords": [
+                    "perpetual", "conflicts with data", "breach liability",
+                    "inconsistent",
+                ],
+            },
+        ],
+    },
+    "contract_C": {
+        "name": "Enterprise Software License",
+        "clauses": ["clause_022", "clause_023", "clause_021"],
+        "dependencies": [
+            {
+                "clause_pair": ("clause_022", "clause_021"),
+                "type": "contradiction",
+                "description": (
+                    "LoL carveouts for indemnification make the indemnification "
+                    "cap meaningless since the asymmetric caps in indemnification "
+                    "would be overridden."
+                ),
+                "keywords": [
+                    "carveout", "override", "indemnification cap",
+                    "meaningless", "swallow",
+                ],
+            },
+            {
+                "clause_pair": ("clause_023", "clause_022"),
+                "type": "interaction",
+                "description": (
+                    "Early termination penalty combined with liability cap could "
+                    "mean termination costs exceed the liability cap."
+                ),
+                "keywords": [
+                    "termination penalty", "exceeds cap", "liability cap",
+                    "early termination",
+                ],
+            },
+        ],
+    },
+    "contract_D": {
+        "name": "Consulting Agreement",
+        "clauses": ["clause_016", "clause_025", "clause_018"],
+        "dependencies": [
+            {
+                "clause_pair": ("clause_016", "clause_025"),
+                "type": "compounding",
+                "description": (
+                    "Worldwide non-compete combined with capturing all IP "
+                    "(even unrelated) effectively prevents the contractor "
+                    "from working in their field."
+                ),
+                "keywords": [
+                    "combined", "effectively prevents", "cannot work",
+                    "compounding", "all IP plus non-compete",
+                ],
+            },
+        ],
+    },
+}
+
+
 def get_scenarios_by_difficulty(difficulty: str) -> List[Dict[str, Any]]:
     """Return scenarios filtered by difficulty level."""
     return [s for s in SCENARIOS if s["difficulty"] == difficulty]
@@ -2163,4 +2253,12 @@ def get_scenario_by_id(scenario_id: str) -> Dict[str, Any] | None:
     for s in SCENARIOS:
         if s["id"] == scenario_id:
             return s
+    return None
+
+
+def get_contract_group_for_clause(clause_id: str) -> Dict[str, Any] | None:
+    """Return the contract group that contains the given clause, or None."""
+    for group in CONTRACT_GROUPS.values():
+        if clause_id in group["clauses"]:
+            return group
     return None

@@ -61,6 +61,7 @@ class ContractReviewEnv(
             feedback=obs_data.get("feedback", ""),
             clauses_remaining=obs_data.get("clauses_remaining", 0),
             context_info=obs_data.get("context_info", ""),
+            related_clauses_summary=obs_data.get("related_clauses_summary", ""),
             done=payload.get("done", False),
             reward=payload.get("reward"),
             metadata=obs_data.get("metadata", {}),

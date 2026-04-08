@@ -14,11 +14,17 @@ from openenv.core.env_server.types import State
 
 try:
     from ..models import ContractReviewAction, ContractReviewObservation
-    from ..scenarios import SCENARIOS, CONTEXT_DATA, get_scenarios_by_difficulty
+    from ..scenarios import (
+        SCENARIOS, CONTEXT_DATA, get_scenarios_by_difficulty,
+        get_contract_group_for_clause, get_scenario_by_id,
+    )
     from ..graders import grade_task_easy, grade_task_medium, grade_task_hard
 except ImportError:
     from models import ContractReviewAction, ContractReviewObservation
-    from scenarios import SCENARIOS, CONTEXT_DATA, get_scenarios_by_difficulty
+    from scenarios import (
+        SCENARIOS, CONTEXT_DATA, get_scenarios_by_difficulty,
+        get_contract_group_for_clause, get_scenario_by_id,
+    )
     from graders import grade_task_easy, grade_task_medium, grade_task_hard
 
 
@@ -123,9 +129,45 @@ class ContractReviewEnvironment(Environment):
             difficulty=self._difficulty,
             feedback="",
             clauses_remaining=len(self._clauses) - 1,
+            related_clauses_summary=self._build_related_clauses_summary(clause["id"]),
             done=False,
             reward=0.0,
         )
+
+    @staticmethod
+    def _build_related_clauses_summary(clause_id: str) -> str:
+        """Build a summary of other clauses in the same contract group.
+
+        Returns an empty string when the clause does not belong to any
+        CONTRACT_GROUP.
+        """
+        group = get_contract_group_for_clause(clause_id)
+        if not group:
+            return ""
+
+        other_ids = [cid for cid in group["clauses"] if cid != clause_id]
+        if not other_ids:
+            return ""
+
+        parts = [f"This clause is part of '{group['name']}' which also contains:"]
+        for other_id in other_ids:
+            scenario = get_scenario_by_id(other_id)
+            if scenario:
+                ctype = scenario["clause_type"].replace("_", " ")
+                # Build a short characterisation from first issue or explanation
+                hint = ""
+                if scenario.get("issues"):
+                    hint = " (" + ", ".join(
+                        i.replace("_", " ") for i in scenario["issues"][:2]
+                    ) + ")"
+                parts.append(f"  - {other_id}: {ctype} clause{hint}")
+
+        # Add dependency hints
+        for dep in group.get("dependencies", []):
+            if clause_id in dep["clause_pair"]:
+                parts.append(f"  [Potential {dep['type']}]: {dep['description']}")
+
+        return "\n".join(parts)
 
     def _build_context_response(self, clause_id: str, action_type: str) -> str:
         """Build context information string for information-gathering actions."""
@@ -140,10 +182,14 @@ class ContractReviewEnvironment(Environment):
                 f"Contract Value: {ctx.get('contract_value', 'Unknown')}"
             )
         elif action_type == "view_full_contract":
-            return (
+            base = (
                 f"Contract Type: {ctx.get('contract_type', 'Unknown')}\n"
                 f"Other Clauses Summary: {ctx.get('other_clauses_summary', 'No summary available.')}"
             )
+            related = self._build_related_clauses_summary(clause_id)
+            if related:
+                base += "\n\n" + related
+            return base
         elif action_type == "check_jurisdiction":
             jurisdiction = ctx.get("jurisdiction", "Unknown")
             return (
@@ -163,12 +209,29 @@ class ContractReviewEnvironment(Environment):
             "explanation": action.explanation,
             "suggested_edit": action.suggested_edit,
         }
+        # Look up jurisdiction from context data for jurisdiction-aware grading
+        ctx = CONTEXT_DATA.get(clause["id"], {})
+        jurisdiction = ctx.get("jurisdiction")
+
+        # Look up cross-clause dependencies for dependency-aware grading
+        group = get_contract_group_for_clause(clause["id"])
+        dependencies = None
+        if group:
+            dependencies = [
+                dep for dep in group.get("dependencies", [])
+                if clause["id"] in dep["clause_pair"]
+            ]
+
         if self._difficulty == "easy":
             return grade_task_easy(action_dict, clause)
         elif self._difficulty == "medium":
-            return grade_task_medium(action_dict, clause)
+            return grade_task_medium(action_dict, clause, jurisdiction=jurisdiction)
         else:
-            return grade_task_hard(action_dict, clause)
+            return grade_task_hard(
+                action_dict, clause,
+                jurisdiction=jurisdiction,
+                dependencies=dependencies or None,
+            )
 
     @staticmethod
     def _clamp_score(score: float) -> float:
@@ -249,6 +312,7 @@ class ContractReviewEnvironment(Environment):
                 feedback=f"[{action_type}] Information retrieved. Steps remaining: {steps_remaining}",
                 clauses_remaining=len(self._clauses) - self._current_clause_idx - 1,
                 context_info=context_info,
+                related_clauses_summary=self._build_related_clauses_summary(clause["id"]),
                 done=False,
                 reward=0.0,
             )
@@ -285,6 +349,7 @@ class ContractReviewEnvironment(Environment):
                 feedback=feedback + f"\nSteps remaining: {steps_remaining}",
                 clauses_remaining=len(self._clauses) - self._current_clause_idx - 1,
                 context_info="",
+                related_clauses_summary=self._build_related_clauses_summary(next_clause["id"]),
                 done=False,
                 reward=step_reward,
             )
