@@ -210,6 +210,20 @@ class ContractReviewEnvironment(Environment):
         self._state.step_count += 1
         self._steps_used += 1
 
+        # Guard: if step() is called without reset(), return an error observation
+        if not self._clauses or self._current_clause_idx >= len(self._clauses):
+            return ContractReviewObservation(
+                clause_text="",
+                clause_id="",
+                task_description="Error: No active episode. Call reset() first.",
+                difficulty=self._difficulty,
+                feedback="Error: No clauses loaded. You must call reset() before step().",
+                clauses_remaining=0,
+                context_info="",
+                done=True,
+                reward=0.0,
+            )
+
         clause = self._clauses[self._current_clause_idx]
         action_type = getattr(action, "action_type", "submit_review") or "submit_review"
         steps_remaining = self._max_steps - self._steps_used
